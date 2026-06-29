@@ -1,0 +1,12 @@
+node_modules/
+dist/
+
+# ローカル秘密 / 設定 (per-user, 絶対にコミットしない)
+.env.secrets
+data/
+*.local.json
+
+# ログ
+*.log
+logs/
+*.bak
