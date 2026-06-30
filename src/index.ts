@@ -1,11 +1,15 @@
 // MemoriaPlugin サイドカーのエントリ。 プラグインを登録してホストを起動する。
 // 設定はすべて env (秘密は .env.secrets 推奨)。
+//
+// 注意: サイドカー単体では本体 SQLite に届かないため ctx.db / GPS / 日記 / 傾向は
+// 非対応 (使うと throw)。 これらを使うプラグインは本体 in-process マウントで動かすこと。
 
 import { serve } from '@hono/node-server';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { buildApp } from '../host/registry.js';
-import { createMemoriaClient } from '../host/memoria-client.js';
+import { createHttpProviders } from '../host/capabilities.js';
+import { createUnavailableSqlite } from '../host/sqlite.js';
 import { loadPlugins, resolveExternalPluginDirs } from '../host/loader.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,12 +24,13 @@ const DATA_DIR = process.env.MEMORIA_PLUGIN_DATA || join(ROOT, 'data');
 // 後に走査する → 同 id は外部が上書き (ユーザカスタム優先)。
 const BUNDLED_PLUGINS_DIR = join(ROOT, 'plugins');
 const externalPluginDirs = resolveExternalPluginDirs();
-const plugins = await loadPlugins([BUNDLED_PLUGINS_DIR, ...externalPluginDirs]);
+const loaded = await loadPlugins([BUNDLED_PLUGINS_DIR, ...externalPluginDirs]);
 
-const app = buildApp(plugins, {
+const app = await buildApp(loaded, {
   dataDir: DATA_DIR,
   publicBaseUrl: PUBLIC_BASE,
-  memoria: createMemoriaClient({ baseUrl: MEMORIA_BASE, token: PLUGIN_TOKEN }),
+  sqlite: createUnavailableSqlite('サイドカーでは ctx.db (SQLite) 非対応 — 本体 in-process マウントで利用すること'),
+  capabilities: createHttpProviders({ baseUrl: MEMORIA_BASE, token: PLUGIN_TOKEN }),
 });
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {

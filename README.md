@@ -33,8 +33,8 @@ Memoria 本体が**このリポを git submodule** (`server/plugins/memoria-plug
 本体から切り離して単体で動作確認するときに使う (port 既定 5191)。
 
 - **接続**: プラグインは設定画面で入れた認証情報で外部サービスに繋ぐ。
-- **通知**: `MemoriaClient` 経由。 in-process は `createInProcessMemoriaClient(announce)`、
-  サイドカーは `createMemoriaClient({baseUrl, token})` (HTTP)。
+- **機能参照**: `ctx.memoria` (= `HostCapabilities`) 経由。 in-process は本体 db に結線した
+  実装 (`createCapabilityProviders(db)`)、 サイドカーは announce のみ HTTP・他は未対応。
 - **拡張**: `plugins/<id>/plugin.ts` で `MemoriaPlugin` を default export するだけ
   (動的 import で自動探索、 後述)。
 - **モジュール解決**: host/plugins は **NodeNext** (相対 import は `.js` 付き) で書く。
@@ -79,27 +79,43 @@ npm start          # 本番相当
 npm run dev        # 開発 (watch)
 ```
 
-## 非公開送迎サービス位置通知 (`plugins/private-transit`)
+## プラグイン契約 (`PluginContext`)
 
-毎朝 `window_start`〜`window_end` に非公開送迎サービス (`route`, 既定「既定便」) の
-GPS を確認し、自宅との距離が `radius_m` (既定 1500m) 以内になると Memoria の
-`#announce` に通知する。
+`routes(r, ctx)` / `jobs[].run(ctx)` に渡る `ctx` で、 出力先と本体機能にアクセスする。
 
-### 接続テスト
+| `ctx.*` | 用途 |
+|---|---|
+| `settings` | プラグイン固有設定 (Wireshark 等の接続先/秘密)。 `<dataDir>/plugins/<id>.json`、 gitignore 済 |
+| `db` | **SQLite アクセサ**。 `db.table(name)` で `plugin_<id>_*` の物理名を得て自由スキーマで read/write。 `db.query(sql)` は本体含む他テーブルへの**読取り専用** SELECT (書込み文は throw) |
+| `memoria` | **本体機能** (`HostCapabilities`、 下表) |
+| `log(msg)` | プレフィックス付きログ出力 |
+| `basePath` | 公開ベースパス (例 `/plugins/<id>`) |
 
-設定画面で ID/パスを保存後:
+### `ctx.memoria` (HostCapabilities)
 
-```bash
-npm run test:connection
+| メソッド | 機能 |
+|---|---|
+| `announce(text)` | Discord `#announce` へ通知 |
+| `latestGps()` | 最新 GPS 位置 (`{lat, lon, recordedAt}` / なければ null) |
+| `diary({date?, summary, data?})` | **日記出力**: その日の記事生成にデータを寄稿する (`plugin_diary_entries` → 本体 diary が narration に織り込む) |
+| `trend({series, value, unit?, at?})` | **傾向出力**: グラフ化用に系列値を集積する (`plugin_trends` → 「ユーザーアプリ」タブで簡易グラフ表示) |
+
+### 前提条件 (`requirements`) — 要インストール物
+
+Wireshark (`tshark`) のような OS 側インストールが要るものは `requirements` で宣言する。
+host がマウント時に `detect()` を走らせ、 **未充足なら `status='needs-setup'`** で
+マウントする (ルートは生やすが jobs は起動しない)。 UI に理由が表示される。
+
+```ts
+requirements: [{ id: 'tshark', label: 'Wireshark (tshark)',
+  hint: 'choco install wireshark', detect: async () => /* PATH 確認等 */ true }]
 ```
 
-→ `[200] 接続成功` なら認証 OK。
+### ライフサイクル / ホットリロード
 
-### 状態
-
-- 接続 (Basic 認証プロキシ + モバイル地図表示): **実装済**
-- GPS 抽出 (`private-transit-service.ts: fetchBusGps`): **未配線**。認証後の `endpoint.php` が
-  叩く座標エンドポイントの形を解析してから実装する (`throw` で明示)。
+- `jobs[]` は**起動時にタイマー登録** (`setInterval(intervalMs)` + 起動直後 1 回)。 例外はログに出して継続。
+- `POST /api/plugins/<id>/reload` で**プラグイン単体をホットリロード** (旧タイマー破棄 →
+  entry を再 import → ルート/ジョブ組み直し)。 「ユーザーアプリ」タブの ⟳ ボタンからも実行可。
 
 ## 新プラグインの足し方
 
@@ -125,6 +141,9 @@ MEMORIA_PLUGINS_DIR=E:/Document/Ars/MemoriaPlugin-Custom/plugins npm start
 
 - 走査順は **同梱 `plugins/` → 外部** で、同じ `id` は**外部が上書き**する
   (共有プラグインをユーザがローカルで差し替えられる)。
+- **Memoria 本体 in-process では env をやめ固定パス**で、 隣接リポ
+  `../MemoriaPlugin-Local/plugins` を個人プラグイン置き場として読む (submodule 化で
+  レイアウトが固定されたため)。 `MEMORIA_PLUGINS_DIR` はサイドカー単体起動でのみ有効。
 - 外部フォルダの中身は `plugins/<id>/plugin.ts` と同じ構造 (フォルダ単位)。
 - カスタムはリポにコミットせず各自ローカルで足す。共有したい変更だけ
   `plugins/` に入れてこのリポへ。
