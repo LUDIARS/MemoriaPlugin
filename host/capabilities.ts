@@ -1,0 +1,106 @@
+// プラグインが参照できる Memoria 本体の「機能」 (host capabilities)。
+//
+// 提供する機能:
+//  - announce  … Discord #announce へ通知。
+//  - latestGps … 最新 GPS 位置を参照 (本体 gps_locations より)。
+//  - diary     … 日記出力: その日の記事生成にデータを寄稿する。
+//  - trend     … 傾向出力: グラフ化用に系列値を集積する。
+//
+// capability は「プラグイン単位」 で発行する (diary/trend が pluginId を自動付与する)。
+// in-process マウント時は本体実装 (db 直叩き) を、 単体サイドカー時は HTTP/未対応版を渡す。
+
+export interface GpsFix {
+  lat: number;
+  lon: number;
+  /** 記録時刻 (UTC ISO)。 不明なら null。 */
+  recordedAt: string | null;
+}
+
+export interface DiaryContribution {
+  /** 対象日 YYYY-MM-DD (ローカル)。 省略時はホストが当日を補う。 */
+  date?: string;
+  /** 記事に織り込む短い要約文。 */
+  summary: string;
+  /** 任意の構造化データ (記事生成プロンプトに添える)。 */
+  data?: unknown;
+}
+
+export interface TrendPoint {
+  /** 系列名 (例 "bus_distance_m")。 同一系列でグラフ化される。 */
+  series: string;
+  value: number;
+  /** 単位 (例 "m", "%")。 表示用。 */
+  unit?: string;
+  /** 記録時刻 ISO。 省略時はホストが now。 */
+  at?: string;
+}
+
+/** プラグインに渡る host 機能アクセサ (1 プラグイン分)。 */
+export interface HostCapabilities {
+  /** Memoria の #announce チャンネルにテキストを投稿する。 */
+  announce(text: string): Promise<void>;
+  /** 最新 GPS 位置。 無ければ null。 */
+  latestGps(): GpsFix | null;
+  /** 日記出力: その日の記事生成にデータを寄稿する。 */
+  diary(contribution: DiaryContribution): void;
+  /** 傾向出力: グラフ化用に系列値を集積する。 */
+  trend(point: TrendPoint): void;
+}
+
+/**
+ * in-process マウント時の機能実装。 host (Memoria 本体) が db を握って実装を注入する。
+ * diary/trend は pluginId 付きで本体ストアに書く実装が渡される。
+ */
+export interface CapabilityProviders {
+  announce: (text: string) => Promise<void>;
+  latestGps: () => GpsFix | null;
+  recordDiary: (pluginId: string, contribution: DiaryContribution) => void;
+  recordTrend: (pluginId: string, point: TrendPoint) => void;
+}
+
+/** あるプラグイン用の HostCapabilities を providers から組む。 */
+export function createCapabilities(pluginId: string, p: CapabilityProviders): HostCapabilities {
+  return {
+    announce: (text) => p.announce(text),
+    latestGps: () => p.latestGps(),
+    diary: (contribution) => p.recordDiary(pluginId, contribution),
+    trend: (point) => p.recordTrend(pluginId, point),
+  };
+}
+
+export interface HttpCapabilityConfig {
+  /** Memoria 本体のベース URL (例 http://localhost:5180)。 */
+  baseUrl: string;
+  /** プラグイン API 用トークン (Memoria 側 plugins.api_token と一致させる)。 */
+  token: string;
+}
+
+/**
+ * 単体サイドカー用 providers。 announce のみ HTTP で本体へ転送し、
+ * GPS/日記/傾向は in-process 専用 (サイドカーでは本体 db に届かない) なので
+ * 明示的に「未対応」 を投げる ([[feedback_no_silent_fallback]])。
+ */
+export function createHttpProviders(cfg: HttpCapabilityConfig): CapabilityProviders {
+  const base = cfg.baseUrl.replace(/\/+$/, '');
+  return {
+    async announce(text: string): Promise<void> {
+      const res = await fetch(`${base}/api/plugins/announce`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-plugin-token': cfg.token },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        throw new Error(`announce 失敗 ${res.status}: ${await res.text().catch(() => '')}`);
+      }
+    },
+    latestGps: () => {
+      throw new Error('latestGps は in-process マウント時のみ利用可能 (サイドカー非対応)');
+    },
+    recordDiary: () => {
+      throw new Error('diary 出力は in-process マウント時のみ利用可能 (サイドカー非対応)');
+    },
+    recordTrend: () => {
+      throw new Error('trend 出力は in-process マウント時のみ利用可能 (サイドカー非対応)');
+    },
+  };
+}

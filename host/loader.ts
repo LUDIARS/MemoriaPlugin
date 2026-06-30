@@ -8,11 +8,21 @@
 //    (各自ローカルで足す)。 同じ id があれば後に走査した外部フォルダが上書きする
 //    (ユーザカスタム優先)。
 // 静的な import 列挙が不要で、 フォルダを足すだけで増える。
+//
+// 読み込み結果には entry ファイルパスを含める → ホットリロードで再 import するため。
 
 import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { MemoriaPlugin } from './types.js';
+
+export interface LoadedPlugin {
+  plugin: MemoriaPlugin;
+  /** import 対象の plugin.ts / plugin.js 絶対パス (ホットリロードで再 import する)。 */
+  entryFile: string;
+  /** プラグインフォルダ。 */
+  dir: string;
+}
 
 export interface LoaderLog {
   info: (msg: string) => void;
@@ -50,14 +60,40 @@ export function resolveExternalPluginDirs(env: NodeJS.ProcessEnv = process.env):
     .filter(Boolean);
 }
 
+/** plugin フォルダ内の entry (plugin.ts 優先) を返す。 無ければ null。 */
+function findEntry(dir: string, name: string): string | null {
+  return (
+    ['plugin.ts', 'plugin.js']
+      .map((f) => join(dir, name, f))
+      .find((p) => existsSync(p)) ?? null
+  );
+}
+
 /**
- * 1 つの plugins ディレクトリを走査して MemoriaPlugin を集める。
+ * entry を await import して default export を取り出す。
+ * cacheBust を渡すと URL に ?v= を付け、 ESM モジュールキャッシュを回避して再読込する
+ * (ホットリロード用)。
+ */
+export async function importPluginModule(
+  entryFile: string,
+  cacheBust?: string,
+): Promise<MemoriaPlugin> {
+  const href = pathToFileURL(entryFile).href + (cacheBust ? `?v=${cacheBust}` : '');
+  const mod = (await import(href)) as { default?: unknown };
+  if (!isPlugin(mod.default)) {
+    throw new Error(`default export が MemoriaPlugin ではありません: ${entryFile}`);
+  }
+  return mod.default;
+}
+
+/**
+ * 1 つの plugins ディレクトリを走査して LoadedPlugin を集める。
  * - 存在しないディレクトリは info ログを出して [] (外部フォルダ未配置を許容)。
  * - dot / underscore 始まりのフォルダは除外 (Concordia scanner と同じフィルタ)。
  * - 個々の失敗は console.error で必ず出して skip し、 他を止めない
  *   (握りつぶさない / 全滅させない)。
  */
-async function scanDir(dir: string, log: LoaderLog): Promise<MemoriaPlugin[]> {
+async function scanDir(dir: string, log: LoaderLog): Promise<LoadedPlugin[]> {
   if (!existsSync(dir)) {
     log.info(`[loader] plugins ディレクトリが無いので skip: ${dir}`);
     return [];
@@ -74,28 +110,22 @@ async function scanDir(dir: string, log: LoaderLog): Promise<MemoriaPlugin[]> {
     return [];
   }
 
-  const plugins: MemoriaPlugin[] = [];
+  const loaded: LoadedPlugin[] = [];
   for (const name of names) {
-    const entry = ['plugin.ts', 'plugin.js']
-      .map((f) => join(dir, name, f))
-      .find((p) => existsSync(p));
+    const entry = findEntry(dir, name);
     if (!entry) {
       log.warn(`[loader] ${name}: plugin.ts / plugin.js が無いので skip (${dir})`);
       continue;
     }
     try {
-      const mod = (await import(pathToFileURL(entry).href)) as { default?: unknown };
-      if (!isPlugin(mod.default)) {
-        log.error(`[loader] ${name}: default export が MemoriaPlugin ではないので skip (${dir})`);
-        continue;
-      }
-      plugins.push(mod.default);
-      log.info(`[loader] loaded "${mod.default.id}" from ${join(dir, name)}`);
+      const plugin = await importPluginModule(entry);
+      loaded.push({ plugin, entryFile: entry, dir: join(dir, name) });
+      log.info(`[loader] loaded "${plugin.id}" from ${join(dir, name)}`);
     } catch (e) {
       log.error(`[loader] ${name}: 読込失敗 — skip (${dir})\n${msg(e)}`);
     }
   }
-  return plugins;
+  return loaded;
 }
 
 /**
@@ -106,17 +136,17 @@ async function scanDir(dir: string, log: LoaderLog): Promise<MemoriaPlugin[]> {
 export async function loadPlugins(
   dirs: string[],
   log: LoaderLog = defaultLog,
-): Promise<MemoriaPlugin[]> {
-  const byId = new Map<string, { plugin: MemoriaPlugin; dir: string }>();
+): Promise<LoadedPlugin[]> {
+  const byId = new Map<string, LoadedPlugin>();
   for (const dir of dirs) {
     const found = await scanDir(dir, log);
-    for (const plugin of found) {
-      const prev = byId.get(plugin.id);
+    for (const item of found) {
+      const prev = byId.get(item.plugin.id);
       if (prev) {
-        log.warn(`[loader] plugin id "${plugin.id}" を ${dir} が上書き (既存: ${prev.dir})`);
+        log.warn(`[loader] plugin id "${item.plugin.id}" を ${item.dir} が上書き (既存: ${prev.dir})`);
       }
-      byId.set(plugin.id, { plugin, dir });
+      byId.set(item.plugin.id, item);
     }
   }
-  return [...byId.values()].map((v) => v.plugin);
+  return [...byId.values()];
 }
