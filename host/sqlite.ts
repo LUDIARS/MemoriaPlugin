@@ -20,14 +20,3 @@ export interface SqliteLike {
   prepare(sql: string): SqliteStatement;
   exec(sql: string): void;
 }
-
-/**
- * db を持たない文脈 (サイドカー等) 用の SqliteLike スタブ。
- * 使われたら理由付きで throw する (握りつぶさない)。 ctx.db を使わないプラグインは無影響。
- */
-export function createUnavailableSqlite(reason: string): SqliteLike {
-  const fail = (): never => {
-    throw new Error(`[sqlite] ${reason}`);
-  };
-  return { prepare: fail, exec: fail };
-}

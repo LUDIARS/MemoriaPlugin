@@ -4,9 +4,9 @@
 // 複数の plugins ディレクトリを優先順に走査し、 各サブフォルダの plugin.ts
 // (なければ plugin.js) を実行時に await import() して default export を集める。
 //  - 同梱 (リポ内 plugins/) は共有プラグイン。
-//  - 外部フォルダ (env MEMORIA_PLUGINS_DIR) はユーザカスタム。 リポ外に置き push しない
-//    (各自ローカルで足す)。 同じ id があれば後に走査した外部フォルダが上書きする
-//    (ユーザカスタム優先)。
+//  - 個人フォルダは本体が固定パスで渡す隣接リポ (../MemoriaPlugin-Local/plugins)。
+//    リポ外に置き push しない (各自ローカルで足す)。 同じ id があれば後に走査した
+//    個人フォルダが上書きする (ユーザカスタム優先)。
 // 静的な import 列挙が不要で、 フォルダを足すだけで増える。
 //
 // 読み込み結果には entry ファイルパスを含める → ホットリロードで再 import するため。
@@ -44,20 +44,6 @@ function isPlugin(x: unknown): x is MemoriaPlugin {
   if (!x || typeof x !== 'object') return false;
   const p = x as Partial<MemoriaPlugin>;
   return typeof p.id === 'string' && typeof p.name === 'string' && typeof p.icon === 'string';
-}
-
-/**
- * 外部 (ユーザカスタム) プラグインディレクトリを env から解決する。
- * Concordia の resolvePluginPath 相当。 MEMORIA_PLUGINS_DIR に ; か , 区切りで
- * 複数指定可。 未設定なら [] (= 同梱のみ)。 存在チェックは走査側で行う。
- */
-export function resolveExternalPluginDirs(env: NodeJS.ProcessEnv = process.env): string[] {
-  const raw = (env.MEMORIA_PLUGINS_DIR ?? '').trim();
-  if (!raw) return [];
-  return raw
-    .split(/[;,]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 /** plugin フォルダ内の entry (plugin.ts 優先) を返す。 無ければ null。 */

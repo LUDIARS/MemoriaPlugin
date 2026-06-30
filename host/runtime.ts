@@ -46,12 +46,6 @@ export interface RegistryConfig {
   sqlite: SqliteLike;
   /** host 機能 (announce / gps / diary / trend) の実装。 */
   capabilities: CapabilityProviders;
-  /**
-   * manifest url の生成方式。
-   *  - 指定あり (サイドカー): `${publicBaseUrl}${basePath}` の絶対 url。
-   *  - 省略 (本体 in-process): basePath のみの相対 url (同一オリジン iframe 用)。
-   */
-  publicBaseUrl?: string;
 }
 
 export interface PluginRegistry {
@@ -76,7 +70,6 @@ export async function buildRegistry(
   cfg: RegistryConfig,
 ): Promise<PluginRegistry> {
   const entries = new Map<string, RuntimeEntry>();
-  const publicBase = cfg.publicBaseUrl ? cfg.publicBaseUrl.replace(/\/+$/, '') : '';
   let reloadSeq = 0;
 
   function makeCtx(plugin: MemoriaPlugin, basePath: string): PluginContext {
@@ -125,7 +118,7 @@ export async function buildRegistry(
       name: e.plugin.name,
       icon: e.plugin.icon,
       description: e.plugin.description ?? '',
-      url: `${publicBase}${e.basePath}`,
+      url: e.basePath,
       status: e.status,
       statusReason: e.statusReason,
     };

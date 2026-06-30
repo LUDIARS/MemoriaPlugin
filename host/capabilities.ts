@@ -7,7 +7,7 @@
 //  - trend     … 傾向出力: グラフ化用に系列値を集積する。
 //
 // capability は「プラグイン単位」 で発行する (diary/trend が pluginId を自動付与する)。
-// in-process マウント時は本体実装 (db 直叩き) を、 単体サイドカー時は HTTP/未対応版を渡す。
+// 本体 in-process マウント時に host (Memoria 本体) が db 直叩きの実装を注入する。
 
 export interface GpsFix {
   lat: number;
@@ -65,42 +65,5 @@ export function createCapabilities(pluginId: string, p: CapabilityProviders): Ho
     latestGps: () => p.latestGps(),
     diary: (contribution) => p.recordDiary(pluginId, contribution),
     trend: (point) => p.recordTrend(pluginId, point),
-  };
-}
-
-export interface HttpCapabilityConfig {
-  /** Memoria 本体のベース URL (例 http://localhost:5180)。 */
-  baseUrl: string;
-  /** プラグイン API 用トークン (Memoria 側 plugins.api_token と一致させる)。 */
-  token: string;
-}
-
-/**
- * 単体サイドカー用 providers。 announce のみ HTTP で本体へ転送し、
- * GPS/日記/傾向は in-process 専用 (サイドカーでは本体 db に届かない) なので
- * 明示的に「未対応」 を投げる ([[feedback_no_silent_fallback]])。
- */
-export function createHttpProviders(cfg: HttpCapabilityConfig): CapabilityProviders {
-  const base = cfg.baseUrl.replace(/\/+$/, '');
-  return {
-    async announce(text: string): Promise<void> {
-      const res = await fetch(`${base}/api/plugins/announce`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-plugin-token': cfg.token },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) {
-        throw new Error(`announce 失敗 ${res.status}: ${await res.text().catch(() => '')}`);
-      }
-    },
-    latestGps: () => {
-      throw new Error('latestGps は in-process マウント時のみ利用可能 (サイドカー非対応)');
-    },
-    recordDiary: () => {
-      throw new Error('diary 出力は in-process マウント時のみ利用可能 (サイドカー非対応)');
-    },
-    recordTrend: () => {
-      throw new Error('trend 出力は in-process マウント時のみ利用可能 (サイドカー非対応)');
-    },
   };
 }

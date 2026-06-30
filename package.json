@@ -3,15 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Memoria ユーザーアプリ用プラグインフレームワーク。 Memoria 本体に submodule として取り込まれ in-process マウントされる (単体サイドカー起動も可)。",
+  "description": "Memoria ユーザーアプリ用プラグインフレームワーク。 Memoria 本体に submodule として取り込まれ in-process マウントされる。",
   "scripts": {
-    "start": "tsx --env-file-if-exists=.env.secrets src/index.ts",
-    "dev": "tsx watch --env-file-if-exists=.env.secrets src/index.ts",
     "smoke": "tsx scripts/smoke.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.0",
     "hono": "^4.6.0"
   },
   "devDependencies": {

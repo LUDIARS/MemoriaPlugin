@@ -4,19 +4,15 @@ Memoria 本体の **「ユーザーアプリ」タブ**に機能を足すため�
 Memoria 本体に **git submodule** として取り込まれ、 本体プロセスに in-process マウントされる。
 
 - このリポは **土台 (host/) のみ**。 個々のプラグイン実体は同梱しない。
-- プラグインは **ユーザが固有に追加する**もの。 リポ外 (`MEMORIA_PLUGINS_DIR`) に置き、
-  push しない (各自ローカル / 任意で別 private リポ)。 共有したい汎用プラグインだけ
-  `plugins/` に入れてこのリポへ PR する。
+- プラグインは **ユーザが固有に追加する**もの。 本体が読む固定パス（隣接リポ
+  `../MemoriaPlugin-Local/plugins`）に置き、 push しない (各自ローカル / 任意で別 private リポ)。
+  共有したい汎用プラグインだけ `plugins/` に入れてこのリポへ PR する。
 
-## アーキテクチャ (2 つの消費形態)
-
-このリポは「プラグインの土台 (host/) + 実体 (plugins/)」で、 **2 通りに消費できる**。
-
-### A. Memoria 本体 in-process (既定 / Concordia 方式)
+## アーキテクチャ (Memoria 本体 in-process)
 
 Memoria 本体が**このリポを git submodule** (`server/plugins/memoria-plugin`) として取り込み、
 起動時に `host/registry.ts: mountPlugins(app, plugins, cfg)` で**本体の Hono に直接マウント**する。
-別プロセス・別ポート・接続 URL は不要 (同一オリジン)。
+**別プロセス・別ポート・接続 URL は不要**（同一オリジン、 相対パス `/plugins/<id>`）。
 
 ```
 [ブラウザ] Memoria UI (5180) ── 「ユーザーアプリ」タブ
@@ -27,14 +23,8 @@ Memoria 本体が**このリポを git submodule** (`server/plugins/memoria-plug
    └─ announce は announceToDiscord(db, text) を in-process 呼び出し
 ```
 
-### B. サイドカー単体 (開発 / 任意)
-
-`src/index.ts` (= `buildApp`) で専用 Hono を建て、 `/manifest` を公開する従来形態。
-本体から切り離して単体で動作確認するときに使う (port 既定 5191)。
-
-- **接続**: プラグインは設定画面で入れた認証情報で外部サービスに繋ぐ。
-- **機能参照**: `ctx.memoria` (= `HostCapabilities`) 経由。 in-process は本体 db に結線した
-  実装 (`createCapabilityProviders(db)`)、 サイドカーは announce のみ HTTP・他は未対応。
+- **機能参照**: `ctx.memoria` (= `HostCapabilities`) 経由。 本体 db に結線した実装
+  (`createCapabilityProviders(db)`) が注入される。
 - **拡張**: `plugins/<id>/plugin.ts` で `MemoriaPlugin` を default export するだけ
   (動的 import で自動探索、 後述)。
 - **モジュール解決**: host/plugins は **NodeNext** (相対 import は `.js` 付き) で書く。
@@ -45,38 +35,19 @@ Memoria 本体が**このリポを git submodule** (`server/plugins/memoria-plug
 | パス | 役割 |
 |---|---|
 | `host/` | プラグイン契約・設定ストア・プロキシ・スケジューラ・registry (機能横断の土台) |
-| `plugins/<id>/` | 各プラグイン実体 |
-| `src/index.ts` | エントリ (プラグイン登録 + 起動) |
-| `scripts/` | 一過性スクリプト (接続テスト等) |
+| `plugins/<id>/` | 各プラグイン実体（共有プラグイン） |
+| `scripts/smoke.ts` | 一過性スクリプト (同梱 plugins/ の読込検証) |
 | `data/` | ローカル設定 / 秘密 (**gitignore 済・コミット禁止**) |
 
 ## セットアップ
 
-```bash
-npm install
-```
+submodule なので Memoria 本体の `server/node_modules` (hono) を共有する。 本体起動時に
+in-process マウントされるため、 このリポ単体での起動・待受ポート・環境変数は不要。
 
-### 環境変数
-
-| 変数 | 既定 | 説明 |
-|---|---|---|
-| `MEMORIA_PLUGIN_PORT` | `5191` | ホスト待受ポート |
-| `MEMORIA_PLUGIN_PUBLIC_URL` | `http://localhost:5191` | manifest の URL 生成元 |
-| `MEMORIA_BASE_URL` | `http://localhost:5180` | Memoria 本体 |
-| `MEMORIA_PLUGIN_TOKEN` | (空) | Memoria 側 `plugins.api_token` と一致させる |
-| `MEMORIA_PLUGIN_DATA` | `./data` | 設定/秘密の保存先 |
-| `MEMORIA_PLUGINS_DIR` | (空) | **外部 (ユーザカスタム) プラグインフォルダ**。`;` か `,` 区切りで複数可。同梱 `plugins/` の後に走査され、同 id は外部が上書きする |
-
-`MEMORIA_PLUGIN_TOKEN` は秘密なので `.env.secrets` に置く (gitignore 済)。
-
-## 起動
-
-> サービス常駐は Excubitor か人手で。 セッションから直接 dev server は立てない方針
-> ([[feedback_service_start_delegate_excubitor]] / [[feedback_no_dev_server]])。
+読込だけ検証する一過性スモーク:
 
 ```bash
-npm start          # 本番相当
-npm run dev        # 開発 (watch)
+npm run smoke     # 同梱 plugins/ を loader で import できるか確認 (ポート/DB は開かない)
 ```
 
 ## プラグイン契約 (`PluginContext`)
@@ -128,22 +99,14 @@ Concordia の reaction-workflow-loader と同じディレクトリ走査方式)�
 
 テンプレートは Memoria 本体リポ (`docs/plugin-template/`) にもコミットしてある。
 
-### 外部 (ユーザカスタム) フォルダ — Concordia 方式
+### 個人 (ユーザカスタム) フォルダ — 固定パス
 
-ユーザ独自のプラグインは**このリポ外**のフォルダに置き、`MEMORIA_PLUGINS_DIR` で
-指す (Concordia が RWF を `CONCORDIA_RWF_PLUGIN_PATH` で外部読みするのと同じ
-「外部フォルダ優先 + 同梱フォールバック」方式)。
+ユーザ独自のプラグインは**このリポ外**の固定パス、 隣接リポ
+`../MemoriaPlugin-Local/plugins` に置く。 本体 (`server/plugins/host.ts`) が同梱 `plugins/`
+の後にここを走査する (env 設定は不要)。
 
-```bash
-# 例: 自分専用プラグインを別フォルダで管理し、push しない
-MEMORIA_PLUGINS_DIR=E:/Document/Ars/MemoriaPlugin-Custom/plugins npm start
-```
-
-- 走査順は **同梱 `plugins/` → 外部** で、同じ `id` は**外部が上書き**する
+- 走査順は **同梱 `plugins/` → 個人フォルダ** で、同じ `id` は**個人フォルダが上書き**する
   (共有プラグインをユーザがローカルで差し替えられる)。
-- **Memoria 本体 in-process では env をやめ固定パス**で、 隣接リポ
-  `../MemoriaPlugin-Local/plugins` を個人プラグイン置き場として読む (submodule 化で
-  レイアウトが固定されたため)。 `MEMORIA_PLUGINS_DIR` はサイドカー単体起動でのみ有効。
-- 外部フォルダの中身は `plugins/<id>/plugin.ts` と同じ構造 (フォルダ単位)。
+- 個人フォルダの中身は `plugins/<id>/plugin.ts` と同じ構造 (フォルダ単位)。
 - カスタムはリポにコミットせず各自ローカルで足す。共有したい変更だけ
   `plugins/` に入れてこのリポへ。
