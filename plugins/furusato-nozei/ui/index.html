@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ふるさと納税</title>
+  <style>
+    :root { color-scheme: light dark; --accent: #d4622a; --line: color-mix(in srgb, currentColor 18%, transparent); }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 14px; }
+    h1 { font-size: 17px; margin: 4px 0 12px; }
+    h2 { font-size: 13px; margin: 0 0 8px; opacity: .8; }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tab { border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 12px; cursor: pointer; background: transparent; color: inherit; }
+    .tab.active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+    label { font-size: 12px; width: 128px; opacity: .85; flex: 0 0 auto; }
+    input, select, textarea {
+      border-radius: 8px; padding: 8px 10px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+      background: transparent; color: inherit; font-size: 13px; flex: 1; min-width: 120px;
+    }
+    textarea { min-height: 60px; width: 100%; resize: vertical; }
+    button {
+      border-radius: 8px; padding: 8px 14px; border: none; background: var(--accent); color: white;
+      font-weight: 700; cursor: pointer; font-size: 13px;
+    }
+    button.ghost { background: transparent; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); color: inherit; }
+    button:disabled { opacity: .5; cursor: progress; }
+    .status { font-size: 12px; margin-left: 4px; }
+    .ok { color: #168a56; } .ng { color: #c43; } .muted { opacity: .62; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .stat { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+    .stat .num { font-size: 20px; font-weight: 800; }
+    .stat .label { font-size: 11px; opacity: .7; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { font-size: 11px; opacity: .7; font-weight: 600; }
+    .pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 11px; }
+    .pill.watching { border-color: #4a90d9; color: #4a90d9; }
+    .pill.arrived { border-color: #168a56; color: #168a56; }
+    .pill.waiting { border-color: #d4622a; color: #d4622a; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .actions button { padding: 4px 8px; font-size: 11px; }
+    .hint { font-size: 11px; opacity: .65; margin: 4px 0 0; }
+    .suggestion-body { white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
+    .year-select { max-width: 100px; }
+  </style>
+</head>
+<body>
+  <h1>🎁 ふるさと納税</h1>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="summary">まとめ</button>
+    <button class="tab" data-tab="settings">設定 / シミュレーション</button>
+    <button class="tab" data-tab="gifts">返礼品一覧</button>
+    <button class="tab" data-tab="bookmarks">気になるリスト</button>
+    <button class="tab" data-tab="suggest">AIサジェスト</button>
+  </div>
+
+  <!-- まとめ -->
+  <div class="panel active" id="panel-summary">
+    <div class="row">
+      <label>対象年</label>
+      <select id="summaryYear" class="year-select"></select>
+    </div>
+    <div class="stat-grid">
+      <div class="stat"><div class="num" id="statLimit">-</div><div class="label">控除上限 (概算)</div></div>
+      <div class="stat"><div class="num" id="statDonated">-</div><div class="label">今年の寄付済み合計</div></div>
+      <div class="stat"><div class="num" id="statRemaining">-</div><div class="label">残り枠 (概算)</div></div>
+    </div>
+    <p class="hint" id="limitNote"></p>
+  </div>
+
+  <!-- 設定 / シミュレーション -->
+  <div class="panel" id="panel-settings">
+    <div class="card">
+      <h2>収入・家族構成</h2>
+      <div class="row"><label>年収 (円)</label><input id="income" type="number" step="10000" placeholder="6000000" /></div>
+      <div class="row">
+        <label>配偶者控除</label>
+        <select id="marital">
+          <option value="single">なし</option>
+          <option value="spouse_deduction">あり (配偶者控除対象)</option>
+        </select>
+      </div>
+      <div class="row"><label>一般扶養親族数</label><input id="depGeneral" type="number" min="0" placeholder="0" /></div>
+      <div class="row"><label>特定扶養親族数 (19〜22歳)</label><input id="depSpecific" type="number" min="0" placeholder="0" /></div>
+      <div class="row"><label>社会保険料率 (概算)</label><input id="siRate" type="number" step="0.01" min="0" max="0.3" placeholder="0.15" /></div>
+      <div class="row"><label>その他控除 (円)</label><input id="otherDed" type="number" step="10000" placeholder="0" /></div>
+      <div class="row">
+        <button id="saveSettings">保存してシミュレーション</button>
+        <span id="settingsStatus" class="status muted"></span>
+      </div>
+      <p class="hint">給与所得控除・所得税率・住民税所得割額から逆算する概算計算です。医療費控除やiDeCo等の個別事情は反映されません。</p>
+    </div>
+  </div>
+
+  <!-- 返礼品一覧 -->
+  <div class="panel" id="panel-gifts">
+    <div class="card">
+      <h2>返礼品を記録</h2>
+      <div class="row"><label>年</label><input id="giftYear" type="number" placeholder="2026" /></div>
+      <div class="row"><label>自治体</label><input id="giftMunicipality" placeholder="○○市" /></div>
+      <div class="row"><label>返礼品名</label><input id="giftProduct" placeholder="米 10kg" /></div>
+      <div class="row"><label>カテゴリ</label><input id="giftCategory" placeholder="米・穀物" /></div>
+      <div class="row"><label>寄付額 (円)</label><input id="giftAmount" type="number" step="1000" placeholder="10000" /></div>
+      <div class="row"><label>寄付日</label><input id="giftDonatedAt" type="date" /></div>
+      <div class="row"><label>発送予定 (開始)</label><input id="giftShipStart" type="date" /></div>
+      <div class="row"><label>発送予定 (終了)</label><input id="giftShipEnd" type="date" /></div>
+      <div class="row">
+        <button id="addGift">追加</button>
+        <span id="giftStatus" class="status muted"></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row"><h2 style="margin:0">履歴</h2><select id="giftsYearFilter" class="year-select"></select></div>
+      <table>
+        <thead><tr><th>年</th><th>自治体 / 返礼品</th><th>寄付額</th><th>発送予定</th><th>到着</th><th></th></tr></thead>
+        <tbody id="giftsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 気になるリスト -->
+  <div class="panel" id="panel-bookmarks">
+    <div class="card">
+      <h2>気になるリスト (Chrome拡張から自動追加)</h2>
+      <p class="hint">Memoria Bookmarker 拡張でふるさと納税サイトの「気になるリストに追加」ボタンを押すとここに入ります。</p>
+      <table>
+        <thead><tr><th>自治体 / 返礼品</th><th>寄付額目安</th><th>状態</th><th></th></tr></thead>
+        <tbody id="bookmarksBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- AIサジェスト -->
+  <div class="panel" id="panel-suggest">
+    <div class="card">
+      <div class="row">
+        <button id="suggestBtn">🤖 おすすめをサジェストする</button>
+        <span id="suggestStatus" class="status muted"></span>
+      </div>
+      <p class="hint">自動では実行されません。ボタンを押した時だけ、今年の履歴・気になるリスト・残り枠をもとにAIが提案します。</p>
+      <div id="suggestionBody" class="suggestion-body muted">まだ提案はありません。</div>
+    </div>
+  </div>
+
+  <script>window.__BASE = '__BASE_PATH__';</script>
+  <script src="__BASE_PATH__/app.js"></script>
+</body>
+</html>

@@ -5,8 +5,9 @@
 //  - latestGps … 最新 GPS 位置を参照 (本体 gps_locations より)。
 //  - diary     … 日記出力: その日の記事生成にデータを寄稿する。
 //  - trend     … 傾向出力: グラフ化用に系列値を集積する。
+//  - llm       … 汎用 LLM 呼び出し (本体 server/llm.ts の 'plugin_llm' タスク経由)。
 //
-// capability は「プラグイン単位」 で発行する (diary/trend が pluginId を自動付与する)。
+// capability は「プラグイン単位」 で発行する (diary/trend/llm が pluginId を自動付与する)。
 // 本体 in-process マウント時に host (Memoria 本体) が db 直叩きの実装を注入する。
 
 export interface GpsFix {
@@ -45,17 +46,20 @@ export interface HostCapabilities {
   diary(contribution: DiaryContribution): void;
   /** 傾向出力: グラフ化用に系列値を集積する。 */
   trend(point: TrendPoint): void;
+  /** 汎用 LLM 呼び出し。 本体設定の 'plugin_llm' タスク (既定 provider/model) で実行する。 */
+  llm(prompt: string): Promise<string>;
 }
 
 /**
  * in-process マウント時の機能実装。 host (Memoria 本体) が db を握って実装を注入する。
- * diary/trend は pluginId 付きで本体ストアに書く実装が渡される。
+ * diary/trend/llm は pluginId 付きで本体ストアに書く / 本体 runLlm を呼ぶ実装が渡される。
  */
 export interface CapabilityProviders {
   announce: (text: string) => Promise<void>;
   latestGps: () => GpsFix | null;
   recordDiary: (pluginId: string, contribution: DiaryContribution) => void;
   recordTrend: (pluginId: string, point: TrendPoint) => void;
+  askLlm: (pluginId: string, prompt: string) => Promise<string>;
 }
 
 /** あるプラグイン用の HostCapabilities を providers から組む。 */
@@ -65,5 +69,6 @@ export function createCapabilities(pluginId: string, p: CapabilityProviders): Ho
     latestGps: () => p.latestGps(),
     diary: (contribution) => p.recordDiary(pluginId, contribution),
     trend: (point) => p.recordTrend(pluginId, point),
+    llm: (prompt) => p.askLlm(pluginId, prompt),
   };
 }
