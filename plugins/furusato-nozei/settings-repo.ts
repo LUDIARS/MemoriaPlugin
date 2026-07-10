@@ -37,18 +37,11 @@ export function saveSettings(db: PluginDb, patch: SettingsPatch): FurusatoSettin
     updated_at: nowIso(),
   };
   const next: FurusatoSettingsRow = { ...cur, ...patch, id: 1, updated_at: nowIso() };
+  // 単一行 (id=1) の全列を書き直すだけなので INSERT OR REPLACE で足りる。
   db.run(
-    `INSERT INTO ${db.table('settings')}
+    `INSERT OR REPLACE INTO ${db.table('settings')}
        (id, annual_income_yen, marital_status, dependents_general, dependents_specific, social_insurance_rate, other_deductions_yen, updated_at)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       annual_income_yen = excluded.annual_income_yen,
-       marital_status = excluded.marital_status,
-       dependents_general = excluded.dependents_general,
-       dependents_specific = excluded.dependents_specific,
-       social_insurance_rate = excluded.social_insurance_rate,
-       other_deductions_yen = excluded.other_deductions_yen,
-       updated_at = excluded.updated_at`,
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?)`,
     next.annual_income_yen,
     next.marital_status,
     next.dependents_general,

@@ -60,7 +60,10 @@ export function createPluginDb(sqlite: SqliteLike, pluginId: string): PluginDb {
   function assertOwned(sql: string): void {
     const normalized = sql.replace(QUALIFIERS, ' ');
     const refs = [...normalized.matchAll(TABLE_REF)].map((m) => m[1] as string);
-    const foreign = refs.filter((t) => !t.toLowerCase().startsWith(prefix));
+    // "ON CONFLICT(...) DO UPDATE SET col = ..." の UPSERT 構文では TABLE_REF が
+    // UPDATE の直後の "SET" をテーブル名と誤認して捕捉する (実際のテーブル参照ではない)。
+    // "SET" が正当なテーブル名になることは無い (prefix 規約上あり得ない) ため除外する。
+    const foreign = refs.filter((t) => !t.toLowerCase().startsWith(prefix) && t.toUpperCase() !== 'SET');
     if (foreign.length > 0) {
       throw new Error(
         `[plugin-db] ${pluginId}: 自プラグイン外テーブル [${foreign.join(', ')}] への ` +
