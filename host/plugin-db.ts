@@ -16,7 +16,7 @@
 import type { SqliteLike } from './sqlite.js';
 
 export interface PluginDb {
-  /** 自プラグイン専用テーブルの prefix (例 "plugin_ozora_bus_")。 */
+  /** 自プラグイン専用テーブルの prefix (例 "plugin_example_")。 */
   readonly prefix: string;
   /** 論理名から物理テーブル名 (prefix + 正規化名) を得る。 */
   table(name: string): string;
