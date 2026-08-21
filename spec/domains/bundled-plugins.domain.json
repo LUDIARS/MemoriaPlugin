@@ -1,0 +1,11 @@
+{
+  "name": "bundled-plugins",
+  "description": "同梱プラグイン。 個々の拡張実装。",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)plugins/(?:.*/)?[^/]+$"
+    }
+  ]
+}

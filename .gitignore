@@ -10,3 +10,6 @@ data/
 *.log
 logs/
 *.bak
+
+# Anatomia のローカル状態 (ドメイン定義の正本は spec/domains/)
+.anatomia/

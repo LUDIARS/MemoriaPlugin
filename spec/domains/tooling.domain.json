@@ -1,0 +1,17 @@
+{
+  "name": "tooling",
+  "description": "運用スクリプトとビルド定義、 自動テスト。",
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    {
+      "pathPattern": "(^|/)scripts/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "(^|/)tests?/(?:.*/)?[^/]+$"
+    },
+    {
+      "pathPattern": "^(?:package\\.json|package-lock\\.json|tsconfig\\.json)$"
+    }
+  ]
+}
