@@ -1,0 +1,10 @@
+{
+  "id": "furusato-nozei",
+  "name": "ふるさと納税",
+  "icon": "🎁",
+  "description": "控除上限シミュレーション・返礼品管理・AIサジェスト・発送通知",
+  "entry": "plugin.ts",
+  "hostApi": { "id": "memoria", "range": "^1.0.0" },
+  "capabilities": ["settings", "db", "announce", "llm"],
+  "assets": ["ui"]
+}

@@ -1,6 +1,7 @@
 {
   "name": "tooling",
   "description": "運用スクリプトとビルド定義、 自動テスト。",
+  "specRefs": ["spec/plugin-distribution.md"],
   "presetRules": [],
   "templateRules": [],
   "membership": [

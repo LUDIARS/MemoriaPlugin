@@ -1,0 +1,8 @@
+{
+  "name": "plugin-packages",
+  "description": "Host-neutral package metadata, bounded acquisition, verified archive installation and serialized local operations.",
+  "specRefs": ["spec/plugin-distribution.md"],
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [{ "pathPattern": "(^|/)src/(packages|lifecycle)/.*" }]
+}

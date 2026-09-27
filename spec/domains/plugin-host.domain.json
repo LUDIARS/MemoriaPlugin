@@ -1,6 +1,7 @@
 {
   "name": "plugin-host",
   "description": "プラグインのホスト。 読み込みと実行、 Memoria 本体との接続。",
+  "specRefs": ["spec/plugin-distribution.md"],
   "presetRules": [],
   "templateRules": [],
   "membership": [

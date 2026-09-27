@@ -19,6 +19,10 @@ export interface PluginContext {
   log: (msg: string) => void;
   /** このプラグインの公開ベースパス (例 "/plugins/private-transit")。 */
   basePath: string;
+  /** Aborted before owned jobs and connections are disposed. */
+  signal?: AbortSignal;
+  /** Register cleanup immediately after acquiring a connection or listener. */
+  onDispose?: (dispose: () => void | Promise<void>) => void;
 }
 
 /** 定期実行ジョブ。 run 内部で時間帯判定を行う (ホストは intervalMs ごとに呼ぶだけ)。 */
@@ -44,7 +48,7 @@ export interface PluginRequirement {
   detect: (ctx: PluginContext) => Promise<boolean>;
 }
 
-export type PluginStatus = 'ready' | 'needs-setup' | 'error';
+export type PluginStatus = 'inactive' | 'ready' | 'needs-setup' | 'error';
 
 /** プラグイン定義。 */
 export interface MemoriaPlugin {
@@ -63,6 +67,8 @@ export interface MemoriaPlugin {
   routes?: (r: Hono, ctx: PluginContext) => void;
   /** 定期ジョブ (ライフサイクル)。 */
   jobs?: PluginJob[];
+  /** Called on first use, never while listing packages. Own resources via ctx.onDispose. */
+  activate?: (ctx: PluginContext) => Promise<void>;
 }
 
 /** Memoria が読む manifest の 1 エントリ。 */

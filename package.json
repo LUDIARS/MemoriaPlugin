@@ -6,14 +6,20 @@
   "description": "Memoria ユーザーアプリ用プラグインフレームワーク。 Memoria 本体に submodule として取り込まれ in-process マウントされる。",
   "scripts": {
     "smoke": "tsx scripts/smoke.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "package": "tsx scripts/package.ts",
+    "test": "tsx --test scripts/packages.test.ts scripts/lifecycle.test.ts"
   },
   "dependencies": {
-    "hono": "^4.6.0"
+    "hono": "^4.6.0",
+    "semver": "7.8.5",
+    "tar": "7.5.22"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/semver": "7.8.0",
+    "esbuild": "0.28.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.6.0"
   }
 }

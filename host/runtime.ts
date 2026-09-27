@@ -1,167 +1,139 @@
-// プラグインランタイム: 登録 + マウント + 単体ホットリロード。
-//
-// 各プラグインを /plugins/<id> に載せるが、 ルートは「可変 dispatcher」 経由にする:
-//   app.all('/plugins/:id[/*]', dispatch) を 1 度だけ登録し、 dispatch は id から
-//   現在の sub-Hono を引いて委譲する。 これにより reload 時に sub を作り直して差し替える
-//   だけで、 Hono のルート削除に頼らず「プラグイン単体」 を再読込できる。
-//
-// reload(id):
-//   1. 旧ジョブタイマーを disposer で確実に停止。
-//   2. entry を ?v= 付きで再 import (ESM キャッシュ回避)。
-//   3. sub/ctx/requirements/jobs を組み直し entries を差し替える。
-
 import { Hono, type Context } from 'hono';
-import type {
-  MemoriaPlugin,
-  PluginContext,
-  PluginManifestEntry,
-  PluginStatus,
-} from './types.js';
+import type { PluginContext, PluginManifestEntry } from './types.js';
 import type { SqliteLike } from './sqlite.js';
-import type { CapabilityProviders } from './capabilities.js';
-import { createCapabilities } from './capabilities.js';
+import { createCapabilities, type CapabilityProviders } from './capabilities.js';
 import { createSettingsStore } from './settings-store.js';
 import { createPluginDb } from './plugin-db.js';
-import { startJobs } from './scheduler.js';
-import { detectRequirements, summarizeUnmet } from './requirements.js';
-import { importPluginModule, type LoadedPlugin } from './loader.js';
+import type { LoadedPlugin } from './loader.js';
+import { loadedSource, type PluginSource } from './discovery.js';
+import { createInstance, type PluginInstance } from './instance.js';
+import { SerialOperation } from '../src/lifecycle/serial.js';
 
-interface RuntimeEntry {
-  id: string;
-  basePath: string;
-  plugin: MemoriaPlugin;
-  ctx: PluginContext;
-  entryFile: string;
-  dir: string;
-  sub: Hono;
-  disposers: Array<() => void>;
-  status: PluginStatus;
-  statusReason?: string;
-}
-
+interface RuntimeEntry { source: PluginSource; instance?: PluginInstance; error?: string }
 export interface RegistryConfig {
-  /** プラグイン設定 (secret 含む) の保存先ディレクトリ。 */
   dataDir: string;
-  /** プラグイン DB アクセサ用 SQLite。 */
   sqlite: SqliteLike;
-  /** host 機能 (announce / gps / diary / trend) の実装。 */
   capabilities: CapabilityProviders;
+  log?: (message: string) => void;
 }
-
 export interface PluginRegistry {
-  /** 全プラグインの manifest (現在状態)。 */
   manifest(): PluginManifestEntry[];
-  /** プラグイン単体をホットリロード。 成功で更新後 manifest、 未知 id は null。 */
   reload(id: string): Promise<PluginManifestEntry | null>;
-  /** 登録 id 一覧。 */
+  activate(id: string): Promise<PluginManifestEntry | null>;
+  replace(source: PluginSource, persist?: () => Promise<void>): Promise<PluginManifestEntry>;
+  remove(id: string, persist?: () => Promise<void>): Promise<void>;
+  dispose(): Promise<void>;
   ids(): string[];
 }
 
-function errMsg(e: unknown): string {
-  return e instanceof Error ? (e.stack ?? e.message) : String(e);
-}
-
-/**
- * app に dispatcher を 1 度だけ登録し、 loaded を活性化して PluginRegistry を返す。
- */
-export async function buildRegistry(
-  app: Hono,
-  loaded: LoadedPlugin[],
-  cfg: RegistryConfig,
-): Promise<PluginRegistry> {
+/** Registry creation does not require a catalog, executable imports or background jobs. */
+export async function buildRegistry(app: Hono, sources: Array<LoadedPlugin | PluginSource>, cfg: RegistryConfig): Promise<PluginRegistry> {
   const entries = new Map<string, RuntimeEntry>();
-  let reloadSeq = 0;
-
-  function makeCtx(plugin: MemoriaPlugin, basePath: string): PluginContext {
-    return {
-      settings: createSettingsStore(cfg.dataDir, plugin.id),
-      db: createPluginDb(cfg.sqlite, plugin.id),
-      memoria: createCapabilities(plugin.id, cfg.capabilities),
-      log: (msg: string) => console.log(`[${plugin.id}] ${msg}`),
-      basePath,
-    };
+  const queues = new Map<string, SerialOperation>();
+  let stopped = false;
+  function queue(id: string): SerialOperation {
+    let value = queues.get(id);
+    if (!value) { value = new SerialOperation(); queues.set(id, value); }
+    return value;
   }
-
-  /** プラグインを活性化 (routes 登録 + requirement 判定 + jobs 起動)。 失敗は status に畳む。 */
-  async function activate(item: LoadedPlugin): Promise<RuntimeEntry> {
-    const { plugin, entryFile, dir } = item;
-    const basePath = `/plugins/${plugin.id}`;
-    const ctx = makeCtx(plugin, basePath);
-    const sub = new Hono();
-    let status: PluginStatus = 'ready';
-    let statusReason: string | undefined;
-    let disposers: Array<() => void> = [];
-
-    try {
-      // ルートは status に関わらず常に生やす (needs-setup でも設定 UI に届くように)。
-      plugin.routes?.(sub, ctx);
-      const req = await detectRequirements(plugin, ctx);
-      if (!req.ok) {
-        status = 'needs-setup';
-        statusReason = summarizeUnmet(req.unmet);
-        console.warn(`[host] plugin "${plugin.id}" needs-setup: ${statusReason}`);
-      } else {
-        disposers = startJobs(plugin, ctx);
-      }
-    } catch (e) {
-      status = 'error';
-      statusReason = errMsg(e);
-      console.error(`[host] plugin "${plugin.id}" 初期化失敗: ${statusReason}`);
+  function log(message: string): void { cfg.log?.(message); }
+  function context(id: string): PluginContext {
+    return { settings: createSettingsStore(cfg.dataDir, id), db: createPluginDb(cfg.sqlite, id),
+      memoria: createCapabilities(id, cfg.capabilities), log: (message) => log(`[${id}] ${message}`), basePath: `/plugins/${id}` };
+  }
+  function manifest(entry: RuntimeEntry): PluginManifestEntry {
+    const m = entry.source.metadata;
+    return { id: m.id, name: m.name, icon: m.icon, description: m.description ?? '', url: `/plugins/${m.id}`,
+      status: entry.error ? 'error' : entry.instance?.status ?? 'inactive', statusReason: entry.error ?? entry.instance?.reason };
+  }
+  async function ensureActive(entry: RuntimeEntry): Promise<PluginInstance> {
+    if (stopped) throw new Error('Plugin registry is stopped');
+    if (!entry.instance) {
+      try { entry.instance = await createInstance(entry.source, context(entry.source.metadata.id)); entry.error = undefined; }
+      catch (error) { entry.error = 'Plugin activation failed'; log(entry.error); throw error; }
     }
-
-    return { id: plugin.id, basePath, plugin, ctx, entryFile, dir, sub, disposers, status, statusReason };
+    return entry.instance;
   }
-
-  function toManifest(e: RuntimeEntry): PluginManifestEntry {
-    return {
-      id: e.plugin.id,
-      name: e.plugin.name,
-      icon: e.plugin.icon,
-      description: e.plugin.description ?? '',
-      url: e.basePath,
-      status: e.status,
-      statusReason: e.statusReason,
-    };
-  }
-
-  // dispatcher: id から現在の sub を引き、 basePath を剥がして委譲する。
-  async function dispatch(c: Context): Promise<Response> {
-    const id = c.req.param('id');
-    const e = id ? entries.get(id) : undefined;
-    if (!e) return c.notFound();
-    const url = new URL(c.req.url);
-    url.pathname = url.pathname.slice(e.basePath.length) || '/';
-    return e.sub.fetch(new Request(url.toString(), c.req.raw));
-  }
-
-  for (const item of loaded) {
-    const e = await activate(item);
-    entries.set(e.id, e);
-    console.log(`[host] mounted plugin "${e.id}" at ${e.basePath} (status=${e.status})`);
-  }
-
-  app.all('/plugins/:id', dispatch);
-  app.all('/plugins/:id/*', dispatch);
-
-  return {
-    manifest: () => [...entries.values()].map(toManifest),
-    ids: () => [...entries.keys()],
-    async reload(id: string): Promise<PluginManifestEntry | null> {
-      const prev = entries.get(id);
-      if (!prev) return null;
-      for (const dispose of prev.disposers) {
-        try {
-          dispose();
-        } catch (e) {
-          console.error(`[host] plugin "${id}" のタイマー停止失敗: ${errMsg(e)}`);
+  async function replaceEntry(source: PluginSource, persist?: () => Promise<void>): Promise<PluginManifestEntry> {
+      if (stopped) throw new Error('Plugin registry is stopped');
+      const old = entries.get(source.metadata.id);
+      // Validate the module before retiring the previous instance. Module scope must be side-effect free.
+      const plugin = await source.load();
+      if (plugin.id !== source.metadata.id) throw new Error('Plugin identity mismatch');
+      const next: RuntimeEntry = { source };
+      if (old?.instance) {
+        await old.instance.dispose();
+        old.instance = undefined;
+        try { next.instance = await createInstance({ ...source, load: async () => plugin }, context(plugin.id)); }
+        catch (error) {
+          log('Replacement failed; reactivating previous plugin');
+          await ensureActive(old);
+          throw error;
         }
       }
-      reloadSeq += 1;
-      const fresh = await importPluginModule(prev.entryFile, `${Date.now()}-${reloadSeq}`);
-      const next = await activate({ plugin: fresh, entryFile: prev.entryFile, dir: prev.dir });
-      entries.set(id, next);
-      console.log(`[host] reloaded plugin "${id}" (status=${next.status})`);
-      return toManifest(next);
+      try { await persist?.(); }
+      catch (error) {
+        await next.instance?.dispose();
+        if (old && !old.instance) await ensureActive(old);
+        throw error;
+      }
+      entries.set(source.metadata.id, next);
+      return manifest(next);
+  }
+  async function replace(source: PluginSource, persist?: () => Promise<void>): Promise<PluginManifestEntry> {
+    return queue(source.metadata.id).run(() => replaceEntry(source, persist));
+  }
+  async function dispatch(c: Context): Promise<Response> {
+    const id = c.req.param('id');
+    if (!id || !entries.has(id)) return c.notFound();
+    return queue(id).run(async () => {
+      const entry = entries.get(id);
+      if (!entry) return c.notFound();
+      const instance = await ensureActive(entry);
+      const url = new URL(c.req.url);
+      url.pathname = url.pathname.slice(`/plugins/${id}`.length) || '/';
+      return instance.app.fetch(new Request(url, c.req.raw));
+    });
+  }
+  for (const value of sources) {
+    const source = 'metadata' in value ? value : loadedSource(value);
+    entries.set(source.metadata.id, { source });
+  }
+  app.all('/plugins/:id', dispatch);
+  app.all('/plugins/:id/*', dispatch);
+  return {
+    manifest: () => [...entries.values()].map(manifest), ids: () => [...entries.keys()], replace,
+    async activate(id) {
+      return queue(id).run(async () => {
+        const entry = entries.get(id);
+        if (!entry) return null;
+        await ensureActive(entry);
+        return manifest(entry);
+      });
+    },
+    async reload(id) {
+      return queue(id).run(async () => {
+        const entry = entries.get(id);
+        return entry ? replaceEntry(entry.source) : null;
+      });
+    },
+    async remove(id, persist) {
+      await queue(id).run(async () => {
+        const old = entries.get(id);
+        await old?.instance?.dispose();
+        if (old) old.instance = undefined;
+        await persist?.();
+        entries.delete(id);
+      });
+    },
+    async dispose() {
+      stopped = true;
+      const results = await Promise.allSettled([...entries.keys()].map((id) => queue(id).run(async () => {
+        await entries.get(id)?.instance?.dispose();
+        entries.delete(id);
+      })));
+      const failures = results.filter((result) => result.status === 'rejected');
+      if (failures.length) throw new AggregateError(failures.map((result) => result.reason), 'Plugin shutdown failed');
     },
   };
 }

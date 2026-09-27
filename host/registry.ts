@@ -6,6 +6,7 @@
 import type { Hono } from 'hono';
 import type { PluginManifestEntry } from './types.js';
 import type { LoadedPlugin } from './loader.js';
+import type { PluginSource } from './discovery.js';
 import { buildRegistry, type PluginRegistry, type RegistryConfig } from './runtime.js';
 
 export type { PluginRegistry, RegistryConfig } from './runtime.js';
@@ -22,7 +23,7 @@ export interface MountResult {
  */
 export async function mountPlugins(
   app: Hono,
-  loaded: LoadedPlugin[],
+  loaded: Array<LoadedPlugin | PluginSource>,
   cfg: RegistryConfig,
 ): Promise<MountResult> {
   const registry = await buildRegistry(app, loaded, cfg);
