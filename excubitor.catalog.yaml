@@ -1,0 +1,30 @@
+services:
+  - code: memoriaplugin-distribution
+    name: MemoriaPlugin Distribution
+    description: Read-only plugin catalog and immutable package downloads; plugins execute in Memoria.
+    project_code: MmP
+    component: distribution
+    tier: saas
+    runtime: node
+    repo: LUDIARS/MemoriaPlugin
+    cwd: ${ARS_ROOT}/MemoriaPlugin
+    command: node dist/distribution/server.js
+    build_command: npm run build:distribution
+    port: 17440
+    ports:
+      - role: service
+        port: 17440
+        env: PORT
+    autostart: false
+    restart_policy: on-failure
+    max_restart: 5
+    uses_corpus: false
+    viewer:
+      enabled: false
+    env:
+      HOST: "127.0.0.1"
+    health:
+      type: http
+      url: http://127.0.0.1:17440/health
+      interval_sec: 30
+      grace_period_sec: 30

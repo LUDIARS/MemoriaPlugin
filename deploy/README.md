@@ -1,3 +1,7 @@
+# Distribution deployment
+
+The current deployment path is the [Excubitor-managed AWS site](excubitor-site.md): a standalone catalog/download service, with plugins executed locally in Memoria. The S3/CloudFront handoff below is an alternative and is not executed by the site build.
+
 # Public package distribution — neco deployment handoff
 
 Package metadata and downloads are **public, without login or a token**. AWS / Excubitor deployment is performed **only by neco**. This repository supplies an offline build and a CloudFormation template; it does not run an AWS deployment, grant IAM access, or change Excubitor permissions.

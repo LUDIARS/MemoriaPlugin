@@ -1,0 +1,6 @@
+{
+  "storage": "data/distribution",
+  "releases": [
+    { "source": "plugins/furusato-nozei", "version": "1.0.0" }
+  ]
+}

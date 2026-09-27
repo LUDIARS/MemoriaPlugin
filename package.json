@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit && tsc --noEmit --lib ES2022",
     "package": "tsx scripts/package.ts",
     "catalog": "tsx scripts/catalog.ts",
-    "test": "tsx --test scripts/packages.test.ts scripts/lifecycle.test.ts scripts/catalog.test.ts"
+    "test": "tsx --test scripts/packages.test.ts scripts/lifecycle.test.ts scripts/catalog.test.ts",
+    "build:distribution": "tsx scripts/build-distribution.ts",
+    "start:distribution": "node dist/distribution/server.js"
   },
   "dependencies": {
     "hono": "^4.6.0",

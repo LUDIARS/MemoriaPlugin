@@ -79,3 +79,7 @@ Uninstall deactivates code and removes its installation reference. Preserve sett
 - `activate(ctx)` acquires resources and immediately registers cleanup with `ctx.onDispose`. `ctx.signal` is aborted on retirement. Jobs cannot overlap themselves, and retirement waits for in-flight jobs. Plugins must implement abort/settlement; arbitrary uncooperative code cannot safely be killed in-process.
 - Development-folder reload refreshes the entry module only; dependency edits still need a host restart. Versioned downloaded packages isolate dependencies by directory. Streaming plugin responses must own their own cancellation through `ctx.signal`; returning a response does not guarantee its body has finished streaming.
 - `npm test` contains offline package-store, second-host compatibility, path, credential-origin and lazy lifecycle regressions. This task delegates execution to Revisor.
+
+## Excubitor site distribution {#SPEC-MMP-EX-SITE}
+
+See [the site runtime contract](../deploy/excubitor-site.md). AWS hosts an independent read-only distribution service managed by Ex; installed plugin execution stays local to Memoria. This supersedes an S3-only topology assumption.
