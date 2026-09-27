@@ -8,7 +8,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit --lib ES2022",
     "package": "tsx scripts/package.ts",
-    "test": "tsx --test scripts/packages.test.ts scripts/lifecycle.test.ts"
+    "catalog": "tsx scripts/catalog.ts",
+    "test": "tsx --test scripts/packages.test.ts scripts/lifecycle.test.ts scripts/catalog.test.ts"
   },
   "dependencies": {
     "hono": "^4.6.0",

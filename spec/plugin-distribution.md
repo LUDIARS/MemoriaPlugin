@@ -1,6 +1,6 @@
 # Downloadable plugin packages
 
-Status: package core and Memoria host adapter implementation in progress. AWS publication remains pending the access policy and authentication.
+Status: package core and Memoria host adapter merged. Public distribution preparation is described in `deploy/README.md`; actual AWS/Excubitor deployment is reserved for neco.
 
 ## User requirements
 
@@ -62,16 +62,17 @@ Uninstall deactivates code and removes its installation reference. Preserve sett
 6. A second host adapter can consume the package/storage layer without importing Memoria-specific code.
 7. Credentials and personal data do not enter published packages, catalog metadata or diagnostic output.
 
-## Open deployment decisions
+## Deployment policy
 
-- User selection is pending: authenticated catalog/download access or public distribution.
-- AWS account/session must be authenticated before creating resources. Previous account lookup failed with an expired session; no resources have been provisioned.
-- Exact deployment topology and publication policy follow that access decision. Local runtime and package contracts must remain independent of it.
+- Catalog and package downloads are public without authentication. The earlier authenticated-distribution interpretation is superseded by neco's clarification.
+- Only neco performs AWS deployment through Excubitor. Agent work prepares code, artifacts and reviewable infrastructure; it does not provision or publish AWS resources.
+- `deploy/public-packages.cfn.json` defines public CloudFront distribution with a private S3 origin. No deployment credentials or access tokens are bundled. See `deploy/README.md` for ordered publication and verification.
+- The generic transport retains optional authentication support for other hosts; Memoria's public catalog configuration leaves the token unset. Local runtime remains independent of distribution.
 
 ## Implementation and use
 
 - `src/packages/` owns the generic contract, HTTPS acquisition and local storage. `host/package-service.ts` is the Memoria-specific adapter.
-- `npm run package -- plugins/furusato-nozei 1.0.0 dist/catalog` emits an immutable `.tgz` and a release descriptor. The publisher assembles `{ "schemaVersion": 1, "releases": [...] }` as `catalog.json` and serves it beside the archives over HTTPS. Builds bundle runtime dependencies; local installation runs no lifecycle scripts or package manager.
+- `npm run package -- plugins/furusato-nozei 1.0.0 dist/releases` emits an immutable `.tgz` and a release descriptor. `npm run catalog -- dist/public dist/releases/furusato-nozei-1.0.0.json` verifies explicitly selected releases and assembles `catalog.json` beside the archives for HTTPS publication. Builds bundle runtime dependencies; local installation runs no lifecycle scripts or package manager.
 - `PackageStore.install` verifies and stages code without executing it. `select`, `active`, `version` and `unselect` operate entirely on disk. `PluginPackages` coordinates activation and active-version persistence.
 - Catalog requests are explicit. Redirects and cross-origin artifact URLs are rejected so catalog credentials cannot leak to another origin. Requests have size and time limits. Authentication headers are injected and are never stored with installed package metadata.
 - Folder plugins can add `plugin.json` to support import-free discovery. Legacy folders without metadata are still discovered eagerly with a warning. Their connections/jobs activate lazily. The bundled plugin includes metadata.

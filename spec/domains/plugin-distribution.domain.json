@@ -1,0 +1,11 @@
+{
+  "name": "plugin-distribution",
+  "description": "Offline assembly of verified public packages and operator-owned AWS distribution configuration.",
+  "specRefs": ["spec/plugin-distribution.md", "deploy/README.md"],
+  "presetRules": [],
+  "templateRules": [],
+  "membership": [
+    { "pathPattern": "(^|/)src/distribution/.*" },
+    { "pathPattern": "(^|/)deploy/.*" }
+  ]
+}

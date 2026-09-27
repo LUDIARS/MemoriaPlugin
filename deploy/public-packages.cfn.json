@@ -1,0 +1,107 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Public plugin catalog and immutable archives. Deployment is performed by neco through Excubitor.",
+  "Resources": {
+    "Packages": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true, "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true, "RestrictPublicBuckets": true
+        },
+        "OwnershipControls": { "Rules": [{ "ObjectOwnership": "BucketOwnerEnforced" }] },
+        "BucketEncryption": { "ServerSideEncryptionConfiguration": [{ "ServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } }] },
+        "VersioningConfiguration": { "Status": "Enabled" }
+      }
+    },
+    "OriginAccess": {
+      "Type": "AWS::CloudFront::OriginAccessControl",
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": { "Fn::Sub": "${AWS::StackName}-packages" },
+          "OriginAccessControlOriginType": "s3", "SigningBehavior": "always", "SigningProtocol": "sigv4"
+        }
+      }
+    },
+    "ArtifactCache": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Name": { "Fn::Sub": "${AWS::StackName}-artifacts" },
+          "MinTTL": 0, "DefaultTTL": 86400, "MaxTTL": 31536000,
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "EnableAcceptEncodingGzip": false,
+            "CookiesConfig": { "CookieBehavior": "none" },
+            "HeadersConfig": { "HeaderBehavior": "none" },
+            "QueryStringsConfig": { "QueryStringBehavior": "none" }
+          }
+        }
+      }
+    },
+    "CatalogCache": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Name": { "Fn::Sub": "${AWS::StackName}-catalog" },
+          "MinTTL": 0, "DefaultTTL": 0, "MaxTTL": 0,
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "EnableAcceptEncodingGzip": false,
+            "CookiesConfig": { "CookieBehavior": "none" },
+            "HeadersConfig": { "HeaderBehavior": "none" },
+            "QueryStringsConfig": { "QueryStringBehavior": "none" }
+          }
+        }
+      }
+    },
+    "Distribution": {
+      "Type": "AWS::CloudFront::Distribution",
+      "Properties": {
+        "DistributionConfig": {
+          "Enabled": true, "IPV6Enabled": true, "HttpVersion": "http2", "PriceClass": "PriceClass_200",
+          "DefaultRootObject": "catalog.json",
+          "Origins": [{
+            "Id": "packages", "DomainName": { "Fn::GetAtt": ["Packages", "RegionalDomainName"] },
+            "OriginAccessControlId": { "Ref": "OriginAccess" }, "S3OriginConfig": { "OriginAccessIdentity": "" }
+          }],
+          "DefaultCacheBehavior": {
+            "TargetOriginId": "packages", "ViewerProtocolPolicy": "https-only",
+            "AllowedMethods": ["GET", "HEAD"], "CachedMethods": ["GET", "HEAD"],
+            "Compress": false, "CachePolicyId": { "Ref": "CatalogCache" }
+          },
+          "CacheBehaviors": [{
+            "PathPattern": "*.tgz", "TargetOriginId": "packages", "ViewerProtocolPolicy": "https-only",
+            "AllowedMethods": ["GET", "HEAD"], "CachedMethods": ["GET", "HEAD"],
+            "Compress": false, "CachePolicyId": { "Ref": "ArtifactCache" }
+          }],
+          "ViewerCertificate": { "CloudFrontDefaultCertificate": true }
+        }
+      }
+    },
+    "PackagePolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": { "Ref": "Packages" },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Sid": "AllowDistributionRead", "Effect": "Allow",
+            "Principal": { "Service": "cloudfront.amazonaws.com" }, "Action": "s3:GetObject",
+            "Resource": { "Fn::Sub": "${Packages.Arn}/*" },
+            "Condition": { "StringEquals": { "AWS:SourceArn": { "Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}" } } }
+          }, {
+            "Sid": "DenyInsecureTransport", "Effect": "Deny", "Principal": "*", "Action": "s3:*",
+            "Resource": [{ "Fn::GetAtt": ["Packages", "Arn"] }, { "Fn::Sub": "${Packages.Arn}/*" }],
+            "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+          }]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "BucketName": { "Value": { "Ref": "Packages" } },
+    "DistributionId": { "Value": { "Ref": "Distribution" } },
+    "CatalogUrl": { "Value": { "Fn::Sub": "https://${Distribution.DomainName}/catalog.json" } }
+  }
+}
