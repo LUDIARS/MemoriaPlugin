@@ -6,7 +6,7 @@
   "description": "Memoria ユーザーアプリ用プラグインフレームワーク。 Memoria 本体に submodule として取り込まれ in-process マウントされる。",
   "scripts": {
     "smoke": "tsx scripts/smoke.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit --lib ES2022",
     "package": "tsx scripts/package.ts",
     "test": "tsx --test scripts/packages.test.ts scripts/lifecycle.test.ts"
   },

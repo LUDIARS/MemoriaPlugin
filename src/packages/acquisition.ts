@@ -6,7 +6,7 @@ const MAX_CATALOG_BYTES = 1024 * 1024;
 /** Authentication is supplied by the app; credentials must not be persisted in the catalog. */
 export interface CatalogSource {
   url: string;
-  headers?: HeadersInit;
+  headers?: NonNullable<Parameters<typeof fetch>[1]>['headers'];
   fetch?: typeof fetch;
 }
 
@@ -19,8 +19,10 @@ function catalogUrl(source: CatalogSource): URL {
 }
 
 async function boundedGet(source: CatalogSource, url: URL, max: number): Promise<Uint8Array> {
+  const headers = new Headers(source.headers);
+  headers.set('Cache-Control', 'no-store');
   const response = await (source.fetch ?? fetch)(url, {
-    headers: source.headers, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(30_000),
+    headers, redirect: 'error', signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok) {
     await response.body?.cancel();
