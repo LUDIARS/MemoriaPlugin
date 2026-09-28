@@ -110,3 +110,9 @@ Concordia の reaction-workflow-loader と同じディレクトリ走査方式)�
 - 個人フォルダの中身は `plugins/<id>/plugin.ts` と同じ構造 (フォルダ単位)。
 - カスタムはリポにコミットせず各自ローカルで足す。共有したい変更だけ
   `plugins/` に入れてこのリポへ。
+
+## Excubitor 配布サービスのセットアップ
+
+`excubitor.bootstrap.json` は `memoriaplugin-distribution` 用。`scripts/site/setup.mjs` がロックファイルに沿って `npm ci --include=dev`、`npm run build:distribution` を実行する。Node・npm・Git が必要。対話入力もLLMも不要で、サービスは起動しない。配布対象は既存の `deploy/distribution.json` が正本。既存の公開済み版は既存publisherが保持し、同版の異なる内容は拒否する。失敗時は非0終了し、設定や個人プラグインを上書きしない。
+
+Exのdata-export/importは未対応エラーで終了する。導入成功をデータ移行成功と扱わない。Memoria本体内のプラグイン実行環境とは別の、読み取り専用配布サーバーを準備する。
